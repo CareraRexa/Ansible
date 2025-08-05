@@ -140,6 +140,142 @@
                   url: http://prometheus-service.monitoring.svc.cluster.local:9090
                   isDefault: true
 
+    - name: Create Grafana SMTP Secret
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: grafana-smtp-secret
+            namespace: monitoring
+          stringData:
+            SMTP_HOST: smtp.gmail.com
+            SMTP_PORT: "587"
+            SMTP_FROM: rectifier1995@gmail.com
+            SMTP_USERNAME: rectifier1995@gmail.com
+            SMTP_PASSWORD: kkjh iesj khgo xorx
+
+    - name: Configure Grafana SMTP alerting
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: grafana-alerting-config
+            namespace: monitoring
+          data:
+            grafana.ini: |
+              [smtp]
+              enabled = true
+              host = smtp.gmail.com:587
+              user = rectifier1995@gmail.com
+              password = kkjh iesj khgo xorx
+              from_address = rectifier1995@gmail.com
+              skip_verify = true
+              startTLS_policy = Always
+              [alerting]
+              enabled = true
+              [unified_alerting]
+              enabled = true
+
+    - name: Provision Grafana Dashboards
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: grafana-dashboard-config
+            namespace: monitoring
+            labels:
+              grafana_dashboard: "1"
+          data:
+            dashboards.yaml: |
+              apiVersion: 1
+              providers:
+                - name: default
+                  orgId: 1
+                  folder: ""
+                  type: file
+                  disableDeletion: false
+                  editable: true
+                  options:
+                    path: /etc/grafana/provisioning/dashboards
+
+    - name: Create Node Dashboard JSON Config
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: node-dashboard
+            namespace: monitoring
+            labels:
+              grafana_dashboard: "1"
+          data:
+            node-dashboard.json: |
+              {
+                "id": null,
+                "title": "Node Monitoring",
+                "timezone": "browser",
+                "schemaVersion": 16,
+                "version": 1,
+                "refresh": "5s",
+                "panels": [
+                  {
+                    "type": "graph",
+                    "title": "CPU Usage %",
+                    "targets": [
+                      {
+                        "expr": "100 - (avg by(instance) (irate(node_cpu_seconds_total{mode='idle'}[5m])) * 100)",
+                        "legendFormat": "{{instance}}",
+                        "refId": "A"
+                      }
+                    ],
+                    "datasource": "Prometheus",
+                    "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8}
+                  },
+                  {
+                    "type": "graph",
+                    "title": "Memory Usage %",
+                    "targets": [
+                      {
+                        "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+                        "legendFormat": "{{instance}}",
+                        "refId": "B"
+                      }
+                    ],
+                    "datasource": "Prometheus",
+                    "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}
+                  },
+                  {
+                    "type": "graph",
+                    "title": "Pod Restarts",
+                    "targets": [
+                      {
+                        "expr": "rate(kube_pod_container_status_restarts_total[5m])",
+                        "legendFormat": "{{pod}}",
+                        "refId": "C"
+                      }
+                    ],
+                    "datasource": "Prometheus",
+                    "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8}
+                  },
+                  {
+                    "type": "graph",
+                    "title": "HTTP 5xx Error Rate",
+                    "targets": [
+                      {
+                        "expr": "sum(rate(http_requests_total{status=~\"5..\"}[1m]))",
+                        "legendFormat": "5xx Errors",
+                        "refId": "D"
+                      }
+                    ],
+                    "datasource": "Prometheus",
+                    "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8}
+                  }
+                ]
+              }
+
     - name: Deploy Grafana
       kubernetes.core.k8s:
         definition:
@@ -171,6 +307,12 @@
                 - name: grafana-secrets
                   secret:
                     secretName: grafana-smtp-secret
+                - name: dashboards-config
+                  configMap:
+                    name: grafana-dashboard-config
+                - name: node-dashboard-json
+                  configMap:
+                    name: node-dashboard
                 containers:
                 - name: grafana
                   image: grafana/grafana:latest
@@ -192,6 +334,10 @@
                   - name: grafana-secrets
                     mountPath: /etc/grafana/secrets
                     readOnly: true
+                  - name: dashboards-config
+                    mountPath: /etc/grafana/provisioning/dashboards
+                  - name: node-dashboard-json
+                    mountPath: /var/lib/grafana/dashboards
 
     - name: Create Grafana Service
       kubernetes.core.k8s:
@@ -232,95 +378,3 @@
                       name: grafana-service
                       port:
                         number: 80
-
-    - name: Create Grafana SMTP Secret
-      kubernetes.core.k8s:
-        definition:
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: grafana-smtp-secret
-            namespace: monitoring
-          stringData:
-            SMTP_HOST: smtp.gmail.com
-            SMTP_PORT: "587"
-            SMTP_FROM: rectifier1995@gmail.com
-            SMTP_USERNAME: rectifier1995@gmail.com
-            SMTP_PASSWORD: kkjh iesj khgo xorx
-
-    - name: Configure Grafana SMTP alerting
-      kubernetes.core.k8s:
-        definition:
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: grafana-alerting-config
-            namespace: monitoring
-          data:
-            grafana.ini: |
-              [smtp]
-              enabled = true
-              host = smtp.gmail.com:587
-              user = rectifier1995@gmail.com
-              password = kkjh iesj khgo xorx
-              from_address = rectifier1995@gmail.com
-              skip_verify = true
-              startTLS_policy = Always
-              [alerting]
-              enabled = true
-              [unified_alerting]
-              enabled = true
-
-    - name: Create Alert Rules for Kubernetes & Application Monitoring
-      kubernetes.core.k8s:
-        definition:
-          apiVersion: monitoring.coreos.com/v1
-          kind: PrometheusRule
-          metadata:
-            name: kube-app-alert-rules
-            namespace: monitoring
-          spec:
-            groups:
-            - name: cpu-usage-alerts
-              rules:
-              - alert: HighCPUUsage
-                expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
-                for: 2m
-                labels:
-                  severity: warning
-                annotations:
-                  summary: High CPU usage detected on {{ $labels.instance }}
-                  description: Node CPU usage is above 80% for more than 2 minutes.
-
-            - name: memory-usage-alerts
-              rules:
-              - alert: HighMemoryUsage
-                expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
-                for: 2m
-                labels:
-                  severity: warning
-                annotations:
-                  summary: High Memory usage on {{ $labels.instance }}
-                  description: Memory usage is above 80%.
-
-            - name: pod-crashloop-alerts
-              rules:
-              - alert: PodCrashLooping
-                expr: rate(kube_pod_container_status_restarts_total[5m]) > 0.2
-                for: 1m
-                labels:
-                  severity: critical
-                annotations:
-                  summary: Pod is crashlooping in {{ $labels.namespace }}
-                  description: Container in pod {{ $labels.pod }} is restarting frequently.
-
-            - name: app-error-rate-alerts
-              rules:
-              - alert: AppErrorRateHigh
-                expr: sum(rate(http_requests_total{status=~"5.."}[1m])) > 5
-                for: 1m
-                labels:
-                  severity: critical
-                annotations:
-                  summary: High HTTP 5xx error rate
-                  description: Application is returning a high rate of errors.
