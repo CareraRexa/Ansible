@@ -1,4 +1,3 @@
----
 # ===== playbooks/10-setup-monitoring.yml =====
 - name: Setup Monitoring
   hosts: 192.168.2.50
@@ -41,7 +40,30 @@
               requests:
                 storage: 2Gi
 
-    # Deploy Prometheus
+    - name: Create Prometheus Config
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: prometheus-config
+            namespace: monitoring
+          data:
+            prometheus.yml: |
+              global:
+                scrape_interval: 15s
+              scrape_configs:
+                - job_name: 'prometheus'
+                  static_configs:
+                    - targets: ['localhost:9090']
+                - job_name: 'kubernetes-pods'
+                  kubernetes_sd_configs:
+                  - role: pod
+                  relabel_configs:
+                  - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                    action: keep
+                    regex: true
+
     - name: Deploy Prometheus
       kubernetes.core.k8s:
         definition:
@@ -82,32 +104,6 @@
                   persistentVolumeClaim:
                     claimName: prometheus-pvc
 
-    # Prometheus Config
-    - name: Create Prometheus Config
-      kubernetes.core.k8s:
-        definition:
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: prometheus-config
-            namespace: monitoring
-          data:
-            prometheus.yml: |
-              global:
-                scrape_interval: 15s
-              scrape_configs:
-                - job_name: 'prometheus'
-                  static_configs:
-                    - targets: ['localhost:9090']
-                - job_name: 'kubernetes-pods'
-                  kubernetes_sd_configs:
-                  - role: pod
-                  relabel_configs:
-                  - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
-                    action: keep
-                    regex: true
-
-    # Prometheus Service
     - name: Create Prometheus Service
       kubernetes.core.k8s:
         definition:
@@ -124,7 +120,26 @@
               targetPort: 9090
             type: ClusterIP
 
-    # Deploy Grafana
+    - name: Create Grafana Data Source ConfigMap
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: grafana-datasource-config
+            namespace: monitoring
+            labels:
+              grafana_datasource: "1"
+          data:
+            datasources.yaml: |
+              apiVersion: 1
+              datasources:
+                - name: Prometheus
+                  type: prometheus
+                  access: proxy
+                  url: http://prometheus-service.monitoring.svc.cluster.local:9090
+                  isDefault: true
+
     - name: Deploy Grafana
       kubernetes.core.k8s:
         definition:
@@ -143,6 +158,19 @@
                 labels:
                   app: grafana
               spec:
+                volumes:
+                - name: storage
+                  persistentVolumeClaim:
+                    claimName: grafana-pvc
+                - name: datasource-config
+                  configMap:
+                    name: grafana-datasource-config
+                - name: grafana-config
+                  configMap:
+                    name: grafana-alerting-config
+                - name: grafana-secrets
+                  secret:
+                    secretName: grafana-smtp-secret
                 containers:
                 - name: grafana
                   image: grafana/grafana:latest
@@ -156,12 +184,15 @@
                   volumeMounts:
                   - name: storage
                     mountPath: /var/lib/grafana
-                volumes:
-                - name: storage
-                  persistentVolumeClaim:
-                    claimName: grafana-pvc
+                  - name: datasource-config
+                    mountPath: /etc/grafana/provisioning/datasources
+                  - name: grafana-config
+                    mountPath: /etc/grafana/grafana.ini
+                    subPath: grafana.ini
+                  - name: grafana-secrets
+                    mountPath: /etc/grafana/secrets
+                    readOnly: true
 
-    # Grafana LoadBalancer Service
     - name: Create Grafana Service
       kubernetes.core.k8s:
         definition:
@@ -179,7 +210,6 @@
             type: LoadBalancer
             loadBalancerIP: "192.168.4.72"
 
-    # Grafana Ingress
     - name: Create Grafana Ingress
       kubernetes.core.k8s:
         definition:
@@ -202,9 +232,8 @@
                       name: grafana-service
                       port:
                         number: 80
-    
-    # Dashboard setup
-    - name: Create Alert Notifier ConfigMap
+
+    - name: Create Grafana SMTP Secret
       kubernetes.core.k8s:
         definition:
           apiVersion: v1
@@ -241,34 +270,6 @@
               enabled = true
               [unified_alerting]
               enabled = true
-
-    - name: Mount SMTP config into Grafana
-      kubernetes.core.k8s:
-        definition:
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: grafana
-            namespace: monitoring
-          spec:
-            template:
-              spec:
-                volumes:
-                  - name: grafana-config
-                    configMap:
-                      name: grafana-alerting-config
-                  - name: grafana-secrets
-                    secret:
-                      secretName: grafana-smtp-secret
-                containers:
-                  - name: grafana
-                    volumeMounts:
-                      - name: grafana-config
-                        mountPath: /etc/grafana/grafana.ini
-                        subPath: grafana.ini
-                      - name: grafana-secrets
-                        mountPath: /etc/grafana/secrets
-                        readOnly: true
 
     - name: Create Alert Rules for Kubernetes & Application Monitoring
       kubernetes.core.k8s:
