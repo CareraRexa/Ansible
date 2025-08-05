@@ -1,0 +1,63 @@
+# Test connectivity to all nodes
+ansible -i inventory/hosts.ini all -m ping
+
+# Deploy everything at once
+ansible-playbook -i inventory/hosts.ini site.yml
+
+# Or step by step deployment:
+
+# Step 1: Setup private registry access on all K8s nodes
+ansible-playbook -i inventory/hosts.ini playbooks/01-setup-registry.yml
+
+# Step 2: Setup HAProxy load balancer with keepalived
+ansible-playbook -i inventory/hosts.ini playbooks/02-setup-haproxy.yml
+
+# Step 3: Join control plane and worker nodes to cluster
+ansible-playbook -i inventory/hosts.ini playbooks/03-join-nodes.yml
+
+# Step 4: Setup Calico CNI for networking
+ansible-playbook -i inventory/hosts.ini playbooks/04-setup-cni.yml
+
+# Step 5: Setup Longhorn CSI for persistent storage
+ansible-playbook -i inventory/hosts.ini playbooks/05-setup-storage.yml
+
+# Step 6: Setup MetalLB for LoadBalancer services
+ansible-playbook -i inventory/hosts.ini playbooks/06-setup-metallb.yml
+
+# Step 7: Setup NGINX Ingress Controller
+ansible-playbook -i inventory/hosts.ini playbooks/07-setup-ingress.yml
+
+# Step 8: Create application namespace and registry secrets
+ansible-playbook -i inventory/hosts.ini playbooks/08-create-namespace.yml
+
+# Step 9: Deploy WhatsVUpp applications (Frontend + Backend Go + Backend Rust)
+ansible-playbook -i inventory/hosts.ini playbooks/09-deploy-applications.yml
+
+# Step 10: Setup monitoring with Prometheus and Grafana
+ansible-playbook -i inventory/hosts.ini playbooks/10-setup-monitoring.yml
+
+# Verification commands after deployment:
+
+# Check cluster status
+ansible -i inventory/hosts.ini 192.168.2.50 -m command -a "kubectl get nodes -o wide"
+
+# Check all pods
+ansible -i inventory/hosts.ini 192.168.2.50 -m command -a "kubectl get pods --all-namespaces"
+
+# Check applications
+ansible -i inventory/hosts.ini 192.168.2.50 -m command -a "kubectl get pods,svc,ingress -n whatsvupp"
+
+# Check monitoring
+ansible -i inventory/hosts.ini 192.168.2.50 -m command -a "kubectl get pods,svc -n monitoring"
+
+# Test application access
+curl -H "Host: whatsvupp.wap.local" http://192.168.4.71
+
+# Test Grafana access
+curl -H "Host: grafana.wap.local" http://192.168.4.71
+
+# Check HAProxy stats
+curl http://192.168.4.60:8404/stats
+
+# Check MetalLB IP assignments
+ansible -i inventory/hosts.ini 192.168.2.50 -m command -a "kubectl get svc --all-namespaces | grep LoadBalancer"

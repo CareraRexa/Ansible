@@ -1,0 +1,30 @@
+---
+# Registry Configuration
+private_registry:
+  url: "192.168.2.254:5000"
+  username: "NW"
+  password: "G4c0r!"
+
+# Kubernetes Configuration
+k8s_version: "1.28.0"
+cluster_cidr: "10.244.0.0/16"        # Pod network CIDR (Calico default)
+service_cidr: "10.96.0.0/12"         # Service CIDR (K8s default)
+cluster_name: "whatsvupp-cluster"
+
+# HAProxy Load Balancer Configuration
+haproxy_vip: "192.168.4.70"          # Virtual IP untuk HA K8s API
+haproxy_port: 6443                    # Port untuk K8s API
+haproxy_stats_port: 8404              # Port untuk HAProxy stats
+
+# Network Configuration
+metallb_ip_range: "192.168.4.71-192.168.4.81"  # MetalLB IP pool (71-81)
+ingress_ip: "192.168.4.71"           # IP untuk NGINX Ingress
+
+# Application Configuration
+app_namespace: "whatsvupp"
+app_domain: "whatsvupp.wap.local"
+grafana_domain: "grafana.wap.local"
+
+# Monitoring Configuration
+grafana_admin_user: "gwenchana"
+grafana_admin_password: "fighting"

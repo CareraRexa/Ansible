@@ -1,0 +1,37 @@
+# ===== playbooks/01-setup-registry.yml =====
+---
+- name: Setup Private Registry Access
+  hosts: k8s
+  become: yes
+  tasks:
+    - name: Create containerd registry config directory
+      file:
+        path: "/etc/containerd/certs.d/192.168.2.254:5000"
+        state: directory
+        mode: '0755'
+
+    - name: Configure insecure registry
+      copy:
+        content: |
+          server = "http://192.168.2.254:5000"
+          
+          [host."http://192.168.2.254:5000"]
+            capabilities = ["pull", "resolve", "push"]
+            skip_verify = true
+            plain-http = true
+        dest: "/etc/containerd/certs.d/192.168.2.254:5000/hosts.toml"
+        mode: '0644'
+      notify: restart containerd
+
+    - name: Add registry config to containerd
+      lineinfile:
+        path: /etc/containerd/config.toml
+        line: '    config_path = "/etc/containerd/certs.d"'
+        insertafter: '^\[plugins\."io\.containerd\.grpc\.v1\.cri"\.registry\]'
+      notify: restart containerd
+
+  handlers:
+    - name: restart containerd
+      systemd:
+        name: containerd
+        state: restarted
