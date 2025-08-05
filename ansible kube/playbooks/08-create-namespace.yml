@@ -1,0 +1,24 @@
+# ===== playbooks/08-create-namespace.yml =====
+---
+- name: Create application namespace and secrets
+  hosts: 192.168.2.50
+  become: yes
+  tasks:
+    - name: Create application namespace
+      kubernetes.core.k8s:
+        name: whatsvupp
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Create registry secret
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: registry-secret
+            namespace: whatsvupp
+          type: kubernetes.io/dockerconfigjson
+          data:
+            .dockerconfigjson: "eyJhdXRocyI6eyIxOTIuMTY4LjIuMjU0OjUwMDAiOnsidXNlcm5hbWUiOiJOVyIsInBhc3N3b3JkIjoiRzRjMHIhIiwiYXV0aCI6IlRsYzZSelJqTUhJaE93PT0ifX19"

@@ -1,0 +1,58 @@
+# ===== playbooks/03-join-nodes.yml =====
+---
+- name: Join Control Plane and Worker Nodes
+  hosts: 192.168.2.50
+  become: yes
+  tasks:
+    - name: Generate new join command with 30d TTL and HAProxy VIP
+      shell: |
+        TOKEN=$(kubeadm token create --ttl 720h)
+        HASH=$(openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | \
+               openssl rsa -pubin -outform der 2>/dev/null | \
+               openssl dgst -sha256 -hex | awk '{print $2}')
+        echo "kubeadm join 192.168.4.70:6443 --token ${TOKEN} --discovery-token-ca-cert-hash sha256:${HASH}"
+      register: worker_join_command
+
+    - name: Generate certificate key for control plane
+      shell: kubeadm init phase upload-certs --upload-certs 2>/dev/null | tail -n 1
+      register: certificate_key
+
+    - name: Set join commands as facts
+      set_fact:
+        worker_join_cmd: "{{ worker_join_command.stdout }}"
+        control_plane_join_cmd: "{{ worker_join_command.stdout }} --control-plane --certificate-key {{ certificate_key.stdout }}"
+
+- name: Join second master node
+  hosts: 192.168.2.51
+  become: yes
+  tasks:
+    - name: Check if already joined
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
+    - name: Join as control plane
+      shell: "{{ hostvars['192.168.2.50']['control_plane_join_cmd'] }}"
+      when: not kubelet_conf.stat.exists
+      ignore_errors: yes
+
+    - name: Setup kubectl for root
+      shell: |
+        mkdir -p $HOME/.kube
+        cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+        chown $(id -u):$(id -g) $HOME/.kube/config
+      when: not kubelet_conf.stat.exists
+
+- name: Join worker nodes
+  hosts: worker
+  become: yes
+  tasks:
+    - name: Check if already joined
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
+    - name: Join as worker
+      shell: "{{ hostvars['192.168.2.50']['worker_join_cmd'] }}"
+      when: not kubelet_conf.stat.exists
+      ignore_errors: yes

@@ -1,0 +1,30 @@
+# ===== playbooks/07-setup-ingress.yml =====
+---
+- name: Install NGINX Ingress Controller
+  hosts: 192.168.2.50
+  become: yes
+  tasks:
+    - name: Check if Ingress installed
+      shell: kubectl get namespace ingress-nginx 2>/dev/null || echo "not-found"
+      register: ingress_ns
+
+    - name: Install NGINX Ingress
+      shell: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
+      when: ingress_ns.stdout == "not-found"
+
+    - name: Wait for Ingress Controller
+      shell: kubectl wait --for=condition=Ready pod -l app.kubernetes.io/component=controller -n ingress-nginx --timeout=300s
+      when: ingress_ns.stdout == "not-found"
+
+    - name: Patch Ingress service for MetalLB
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ingress-nginx-controller
+            namespace: ingress-nginx
+          spec:
+            type: LoadBalancer
+            loadBalancerIP: "192.168.4.71"
+        merge_type: strategic-merge

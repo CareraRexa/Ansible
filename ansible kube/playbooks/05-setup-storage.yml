@@ -1,0 +1,59 @@
+# ===== playbooks/05-setup-storage.yml =====
+---
+- name: Install Longhorn prerequisites
+  hosts: k8s
+  become: yes
+  tasks:
+    - name: Install required packages
+      package:
+        name:
+          - open-iscsi
+          - util-linux
+          - nfs-common
+        state: present
+        update_cache: yes
+
+    - name: Start iscsid service
+      systemd:
+        name: iscsid
+        state: started
+        enabled: yes
+
+- name: Install Longhorn CSI
+  hosts: 192.168.2.50
+  become: yes
+  tasks:
+    - name: Check if Longhorn installed
+      shell: kubectl get namespace longhorn-system 2>/dev/null || echo "not-found"
+      register: longhorn_ns
+
+    - name: Install Longhorn
+      shell: kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/v1.5.3/deploy/longhorn.yaml
+      when: longhorn_ns.stdout == "not-found"
+
+    - name: Wait for Longhorn pods
+      shell: kubectl wait --for=condition=Ready pods --all -n longhorn-system --timeout=600s
+      when: longhorn_ns.stdout == "not-found"
+
+    - name: Create Longhorn ingress
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: longhorn-ingress
+            namespace: longhorn-system
+            annotations:
+              kubernetes.io/ingress.class: nginx
+          spec:
+            rules:
+            - host: longhorn.wap.local
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: longhorn-frontend
+                      port:
+                        number: 80

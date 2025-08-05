@@ -1,0 +1,155 @@
+---
+- name: Install and Configure HAProxy
+  hosts: haproxy
+  become: yes
+  gather_facts: yes  # pastikan facts dikumpulkan
+  vars:
+    haproxy_interface: "{{ ansible_default_ipv4.interface }}"
+
+  tasks:
+    - name: Install HAProxy and keepalived
+      package:
+        name:
+          - haproxy
+          - keepalived
+        state: present
+        update_cache: yes
+
+    - name: Configure HAProxy
+      copy:
+        content: |
+          global
+              log stdout local0
+              chroot /var/lib/haproxy
+              stats socket /run/haproxy/admin.sock mode 660 level admin
+              stats timeout 30s
+              user haproxy
+              group haproxy
+              daemon
+
+          defaults
+              mode http
+              log global
+              option httplog
+              option dontlognull
+              option forwardfor except 127.0.0.0/8
+              option redispatch
+              retries 3
+              timeout http-request 10s
+              timeout queue 20s
+              timeout connect 10s
+              timeout client 1m
+              timeout server 1m
+              timeout http-keep-alive 10s
+              timeout check 10s
+
+          # Kubernetes API Server Load Balancer
+          frontend kubernetes-api
+              bind *:6443
+              mode tcp
+              option tcplog
+              default_backend kubernetes-api
+
+          backend kubernetes-api
+              mode tcp
+              option tcplog
+              option tcp-check
+              balance roundrobin
+              server master-1 192.168.2.50:6443 check
+              server master-2 192.168.2.51:6443 check
+
+          # Application HTTP Load Balancer
+          frontend http-frontend
+              bind *:80
+              mode http
+              acl is_whatsvupp hdr(host) -i whatsvupp.wap.local
+              acl is_grafana hdr(host) -i grafana.wap.local
+              use_backend whatsvupp-backend if is_whatsvupp
+              use_backend grafana-backend if is_grafana
+              default_backend whatsvupp-backend
+
+          backend whatsvupp-backend
+              mode http
+              balance roundrobin
+              option httpchk GET /
+              server ingress-nginx 192.168.4.71:80 check
+
+          backend grafana-backend
+              mode http
+              balance roundrobin
+              option httpchk GET /api/health
+              server grafana-lb 192.168.4.72:80 check
+
+          # HAProxy Statistics
+          frontend haproxy-stats
+              bind *:8404
+              mode http
+              stats enable
+              stats uri /stats
+              stats realm HAProxy\ Statistics
+              stats auth admin:admin123
+              stats refresh 5s
+        dest: /etc/haproxy/haproxy.cfg
+        backup: yes
+      notify: restart haproxy
+
+    - name: Configure keepalived
+      copy:
+        content: |
+          global_defs {
+              router_id LB_DEVEL
+              script_user root
+              enable_script_security
+          }
+
+          vrrp_script chk_haproxy {
+              script "/bin/curl -f http://localhost:8404/stats || exit 1"
+              interval 2
+              weight -2
+              fall 3
+              rise 2
+          }
+
+          vrrp_instance VI_1 {
+              state MASTER
+              interface {{ haproxy_interface }}
+              virtual_router_id 51
+              priority 100
+              advert_int 1
+              authentication {
+                  auth_type PASS
+                  auth_pass whatsvupp
+              }
+              virtual_ipaddress {
+                  192.168.4.70/24
+              }
+              track_script {
+                  chk_haproxy
+              }
+          }
+        dest: /etc/keepalived/keepalived.conf
+        backup: yes
+      notify: restart keepalived
+
+    - name: Start and enable HAProxy
+      systemd:
+        name: haproxy
+        state: started
+        enabled: yes
+
+    - name: Start and enable keepalived
+      systemd:
+        name: keepalived
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: restart haproxy
+      systemd:
+        name: haproxy
+        state: restarted
+
+    - name: restart keepalived
+      systemd:
+        name: keepalived
+        state: restarted

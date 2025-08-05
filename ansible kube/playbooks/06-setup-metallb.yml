@@ -1,0 +1,41 @@
+# ===== playbooks/06-setup-metallb.yml =====
+---
+- name: Install MetalLB
+  hosts: 192.168.2.50
+  become: yes
+  tasks:
+    - name: Check if MetalLB installed
+      shell: kubectl get namespace metallb-system 2>/dev/null || echo "not-found"
+      register: metallb_ns
+
+    - name: Install MetalLB
+      shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml
+      when: metallb_ns.stdout == "not-found"
+
+    - name: Wait for MetalLB pods
+      shell: kubectl wait --for=condition=Ready pods --all -n metallb-system --timeout=300s
+      when: metallb_ns.stdout == "not-found"
+
+    - name: Configure MetalLB IP pool
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: metallb.io/v1beta1
+          kind: IPAddressPool
+          metadata:
+            name: production
+            namespace: metallb-system
+          spec:
+            addresses:
+            - "192.168.4.71-192.168.4.81"
+
+    - name: Configure MetalLB L2 advertisement
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: metallb.io/v1beta1
+          kind: L2Advertisement
+          metadata:
+            name: l2-adv
+            namespace: metallb-system
+          spec:
+            ipAddressPools:
+            - production

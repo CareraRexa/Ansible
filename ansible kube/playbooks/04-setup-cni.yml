@@ -1,0 +1,36 @@
+# ===== playbooks/04-setup-cni.yml =====
+---
+- name: Setup Calico CNI
+  hosts: 192.168.2.50
+  become: yes
+  tasks:
+    - name: Check if CNI already installed
+      shell: kubectl get pods -n kube-system | grep calico | wc -l
+      register: cni_pods
+
+    - name: Install Calico operator
+      shell: kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.0/manifests/tigera-operator.yaml
+      when: cni_pods.stdout == "0"
+      ignore_errors: yes
+
+    - name: Configure Calico installation
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: operator.tigera.io/v1
+          kind: Installation
+          metadata:
+            name: default
+          spec:
+            calicoNetwork:
+              ipPools:
+              - blockSize: 26
+                cidr: "10.244.0.0/16"
+                encapsulation: VXLAN
+                natOutgoing: Enabled
+                nodeSelector: all()
+        wait: true
+        wait_timeout: 300
+      when: cni_pods.stdout == "0"
+
+    - name: Wait for all nodes to be ready
+      shell: kubectl wait --for=condition=Ready nodes --all --timeout=600s

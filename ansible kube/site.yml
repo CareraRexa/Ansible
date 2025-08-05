@@ -1,0 +1,12 @@
+# ===== site.yml =====
+---
+- import_playbook: playbooks/01-setup-registry.yml
+- import_playbook: playbooks/02-setup-haproxy.yml
+- import_playbook: playbooks/03-join-nodes.yml
+- import_playbook: playbooks/04-setup-cni.yml
+- import_playbook: playbooks/05-setup-storage.yml
+- import_playbook: playbooks/06-setup-metallb.yml
+- import_playbook: playbooks/07-setup-ingress.yml
+- import_playbook: playbooks/08-create-namespace.yml
+- import_playbook: playbooks/09-deploy-applications.yml
+- import_playbook: playbooks/10-setup-monitoring.yml

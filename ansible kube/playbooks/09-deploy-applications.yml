@@ -1,0 +1,195 @@
+# ===== playbooks/09-deploy-applications.yml =====
+---
+- name: Deploy WhatsVUpp Applications
+  hosts: 192.168.2.50
+  become: yes
+  tasks:
+    # Deploy Frontend
+    - name: Deploy Frontend
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: frontend
+            namespace: whatsvupp
+          spec:
+            replicas: 3
+            selector:
+              matchLabels:
+                app: frontend
+            template:
+              metadata:
+                labels:
+                  app: frontend
+              spec:
+                imagePullSecrets:
+                - name: registry-secret
+                containers:
+                - name: frontend
+                  image: "192.168.2.254:5000/whatsvupp-frontend:latest"
+                  ports:
+                  - containerPort: 3000
+                  resources:
+                    requests:
+                      memory: "256Mi"
+                      cpu: "100m"
+                    limits:
+                      memory: "512Mi"
+                      cpu: "500m"
+
+    # Deploy Backend Go
+    - name: Deploy Backend Go
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: backend-go
+            namespace: whatsvupp
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: backend-go
+            template:
+              metadata:
+                labels:
+                  app: backend-go
+              spec:
+                imagePullSecrets:
+                - name: registry-secret
+                containers:
+                - name: backend-go
+                  image: "192.168.2.254:5000/whatsvupp-backend-go:latest"
+                  ports:
+                  - containerPort: 8080
+                  resources:
+                    requests:
+                      memory: "256Mi"
+                      cpu: "100m"
+                    limits:
+                      memory: "512Mi"
+                      cpu: "500m"
+
+    # Deploy Backend Rust
+    - name: Deploy Backend Rust
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: backend-rust
+            namespace: whatsvupp
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: backend-rust
+            template:
+              metadata:
+                labels:
+                  app: backend-rust
+              spec:
+                imagePullSecrets:
+                - name: registry-secret
+                containers:
+                - name: backend-rust
+                  image: "192.168.2.254:5000/whatsvupp-backend-rust:latest"
+                  ports:
+                  - containerPort: 8000
+                  resources:
+                    requests:
+                      memory: "256Mi"
+                      cpu: "100m"
+                    limits:
+                      memory: "512Mi"
+                      cpu: "500m"
+
+    # Create Services
+    - name: Create Frontend Service
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: frontend-service
+            namespace: whatsvupp
+          spec:
+            selector:
+              app: frontend
+            ports:
+            - port: 80
+              targetPort: 3000
+            type: ClusterIP
+
+    - name: Create Backend Go Service
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: backend-go-service
+            namespace: whatsvupp
+          spec:
+            selector:
+              app: backend-go
+            ports:
+            - port: 8080
+              targetPort: 8080
+            type: ClusterIP
+
+    - name: Create Backend Rust Service
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: backend-rust-service
+            namespace: whatsvupp
+          spec:
+            selector:
+              app: backend-rust
+            ports:
+            - port: 8000
+              targetPort: 8000
+            type: ClusterIP
+
+    # Create Ingress
+    - name: Create Application Ingress
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: whatsvupp-ingress
+            namespace: whatsvupp
+            annotations:
+              kubernetes.io/ingress.class: nginx
+              nginx.ingress.kubernetes.io/rewrite-target: /
+          spec:
+            rules:
+            - host: whatsvupp.wap.local
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: frontend-service
+                      port:
+                        number: 80
+                - path: /api/go
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: backend-go-service
+                      port:
+                        number: 8080
+                - path: /api/rust
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: backend-rust-service
+                      port:
+                        number: 8000
