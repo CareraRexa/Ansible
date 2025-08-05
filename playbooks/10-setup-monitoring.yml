@@ -1,5 +1,5 @@
-# ===== playbooks/10-setup-monitoring.yml =====
 ---
+# ===== playbooks/10-setup-monitoring.yml =====
 - name: Setup Monitoring
   hosts: 192.168.2.50
   become: yes
@@ -10,6 +10,36 @@
         api_version: v1
         kind: Namespace
         state: present
+
+    - name: Create Prometheus PVC
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: prometheus-pvc
+            namespace: monitoring
+          spec:
+            accessModes:
+            - ReadWriteOnce
+            resources:
+              requests:
+                storage: 5Gi
+
+    - name: Create Grafana PVC
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: grafana-pvc
+            namespace: monitoring
+          spec:
+            accessModes:
+            - ReadWriteOnce
+            resources:
+              requests:
+                storage: 2Gi
 
     # Deploy Prometheus
     - name: Deploy Prometheus
@@ -49,7 +79,8 @@
                   configMap:
                     name: prometheus-config
                 - name: storage
-                  emptyDir: {}
+                  persistentVolumeClaim:
+                    claimName: prometheus-pvc
 
     # Prometheus Config
     - name: Create Prometheus Config
@@ -127,7 +158,8 @@
                     mountPath: /var/lib/grafana
                 volumes:
                 - name: storage
-                  emptyDir: {}
+                  persistentVolumeClaim:
+                    claimName: grafana-pvc
 
     # Grafana LoadBalancer Service
     - name: Create Grafana Service
