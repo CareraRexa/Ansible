@@ -1,0 +1,9 @@
+- name: Deploy Kube State Metrics
+  hosts: 192.168.2.50
+  become: yes
+  tasks:
+    - name: Deploy kube-state-metrics from official manifest
+      shell: |
+        kubectl apply -f https://github.com/kubernetes/kube-state-metrics/releases/latest/download/kube-state-metrics.yaml
+
+ 
